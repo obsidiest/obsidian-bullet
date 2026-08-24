@@ -7,6 +7,7 @@ export type KeepCursorWithinContent =
 export interface SettingsObject {
   styleLists: boolean;
   enhanceVerticalLineHover: boolean;
+  bulletThreading: boolean;
   debug: boolean;
   stickCursor: KeepCursorWithinContent | boolean;
   keepBodyTextInBullets: boolean;
@@ -17,6 +18,7 @@ export interface SettingsObject {
   outerListLines: boolean;
   listLineAction: VerticalLinesAction;
   mobileRightFoldControls: boolean;
+  logseqFolder: string;
   dnd: boolean;
 }
 
@@ -29,6 +31,7 @@ export interface SettingsChange {
 const DEFAULT_SETTINGS: SettingsObject = {
   styleLists: true,
   enhanceVerticalLineHover: true,
+  bulletThreading: false,
   debug: false,
   stickCursor: "bullet-and-checkbox",
   keepBodyTextInBullets: true,
@@ -39,16 +42,18 @@ const DEFAULT_SETTINGS: SettingsObject = {
   outerListLines: true,
   listLineAction: "toggle-folding",
   mobileRightFoldControls: true,
+  logseqFolder: "",
   dnd: true,
 };
 
 type StoredSettingsObject = Partial<SettingsObject> & {
   listLines?: boolean;
+  logseqSyncState?: unknown;
 };
 
 export interface Storage {
   loadData(): Promise<StoredSettingsObject | null>;
-  saveData(settings: SettingsObject): Promise<void>;
+  saveData(settings: StoredSettingsObject): Promise<void>;
 }
 
 type Callback = (change: SettingsChange) => void;
@@ -62,6 +67,8 @@ export class Settings {
   private storage: Storage;
   private values: SettingsObject = { ...DEFAULT_SETTINGS };
   private subscriptions: Map<Callback, Subscription>;
+  private logseqSyncState: unknown;
+  private saveQueue: Promise<void> = Promise.resolve();
 
   constructor(storage: Storage) {
     this.storage = storage;
@@ -139,6 +146,14 @@ export class Settings {
     this.update({ enhanceVerticalLineHover: value });
   }
 
+  get bulletThreading() {
+    return this.values.bulletThreading;
+  }
+
+  set bulletThreading(value: boolean) {
+    this.update({ bulletThreading: value });
+  }
+
   get outerVerticalLines() {
     return this.values.outerListLines;
   }
@@ -161,6 +176,14 @@ export class Settings {
 
   set mobileRightFoldControls(value: boolean) {
     this.update({ mobileRightFoldControls: value });
+  }
+
+  get logseqFolder() {
+    return this.values.logseqFolder;
+  }
+
+  set logseqFolder(value: string) {
+    this.update({ logseqFolder: value });
   }
 
   get dragAndDrop() {
@@ -195,8 +218,10 @@ export class Settings {
   }
 
   async load() {
-    const { listLines, ...saved } = (await this.storage.loadData()) ?? {};
+    const { listLines, logseqSyncState, ...saved } =
+      (await this.storage.loadData()) ?? {};
     this.values = Object.assign({}, DEFAULT_SETTINGS, saved);
+    this.logseqSyncState = logseqSyncState;
     if (listLines === false) {
       this.values.outerListLines = false;
       this.values.listLineAction = "none";
@@ -204,7 +229,24 @@ export class Settings {
   }
 
   async save() {
-    await this.storage.saveData(this.values);
+    const data: StoredSettingsObject = {
+      ...this.values,
+      ...(this.logseqSyncState === undefined
+        ? {}
+        : { logseqSyncState: this.logseqSyncState }),
+    };
+    const save = this.saveQueue.then(() => this.storage.saveData(data));
+    this.saveQueue = save.catch(() => undefined);
+    await save;
+  }
+
+  getLogseqSyncState(): unknown {
+    return this.logseqSyncState;
+  }
+
+  async saveLogseqSyncState(state: unknown): Promise<void> {
+    this.logseqSyncState = state;
+    await this.save();
   }
 
   getValues(): SettingsObject {

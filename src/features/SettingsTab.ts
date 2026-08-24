@@ -21,9 +21,11 @@ type SettingsControlKey =
   | "overrideSelectAllBehaviour"
   | "betterListsStyles"
   | "enhancedVerticalLineHover"
+  | "bulletThreading"
   | "outerVerticalLines"
   | "verticalLinesActionEnabled"
   | "mobileRightFoldControls"
+  | "logseqFolder"
   | "dragAndDrop"
   | "debug";
 
@@ -126,6 +128,14 @@ const SETTING_GROUPS = [
           key: "enhancedVerticalLineHover",
         },
       },
+      {
+        name: "Show bullet threading",
+        desc: "Highlight the nested path to the list item under the pointer in the editor and reading view.",
+        control: {
+          type: "toggle",
+          key: "bulletThreading",
+        },
+      },
     ],
   },
   {
@@ -160,6 +170,20 @@ const SETTING_GROUPS = [
   },
   {
     type: "group",
+    heading: "Logseq mode",
+    items: [
+      {
+        name: "Folder for Logseq mode",
+        desc: "Shift+click a list bullet in this vault folder or its subfolders to navigate file-backed outlines. The 0-level master-root item does nothing; level 1 and deeper items can create notes in Live Preview or open existing notes in Reading view. Normal clicks keep Obsidian's fold and unfold behavior.",
+        control: {
+          type: "text",
+          key: "logseqFolder",
+        },
+      },
+    ],
+  },
+  {
+    type: "group",
     heading: "Advanced",
     items: [
       {
@@ -177,6 +201,13 @@ const SETTING_GROUPS = [
 function decodeBooleanControl(key: string, value: unknown): boolean {
   if (typeof value !== "boolean") {
     throw new TypeError(`Expected ${key} to be a boolean`);
+  }
+  return value;
+}
+
+function decodeStringControl(key: string, value: unknown): string {
+  if (typeof value !== "string") {
+    throw new TypeError(`Expected ${key} to be a string`);
   }
   return value;
 }
@@ -225,12 +256,16 @@ class ObsidianBulletPluginSettingTab extends PluginSettingTab {
         return this.settings.betterListsStyles;
       case "enhancedVerticalLineHover":
         return this.settings.enhancedVerticalLineHover;
+      case "bulletThreading":
+        return this.settings.bulletThreading;
       case "outerVerticalLines":
         return this.settings.outerVerticalLines;
       case "verticalLinesActionEnabled":
         return this.settings.verticalLinesAction === "toggle-folding";
       case "mobileRightFoldControls":
         return this.settings.mobileRightFoldControls;
+      case "logseqFolder":
+        return this.settings.logseqFolder;
       case "dragAndDrop":
         return this.settings.dragAndDrop;
       case "debug":
@@ -273,6 +308,9 @@ class ObsidianBulletPluginSettingTab extends PluginSettingTab {
           value,
         );
         break;
+      case "bulletThreading":
+        this.settings.bulletThreading = decodeBooleanControl(key, value);
+        break;
       case "outerVerticalLines":
         this.settings.outerVerticalLines = decodeBooleanControl(key, value);
         break;
@@ -286,6 +324,9 @@ class ObsidianBulletPluginSettingTab extends PluginSettingTab {
           key,
           value,
         );
+        break;
+      case "logseqFolder":
+        this.settings.logseqFolder = decodeStringControl(key, value);
         break;
       case "dragAndDrop":
         this.settings.dragAndDrop = decodeBooleanControl(key, value);
@@ -325,6 +366,21 @@ class ObsidianBulletPluginSettingTab extends PluginSettingTab {
       setting.addDropdown((dropdown) => {
         dropdown
           .addOptions(control.options)
+          .setValue(currentValue)
+          .onChange(async (value) => {
+            await this.setControlValue(control.key, value);
+          });
+      });
+      return;
+    }
+
+    if (control.type === "text") {
+      if (typeof currentValue !== "string") {
+        throw new TypeError(`Expected ${control.key} to resolve to a string`);
+      }
+      setting.addText((text) => {
+        text
+          .setPlaceholder("Bulletlist")
           .setValue(currentValue)
           .onChange(async (value) => {
             await this.setControlValue(control.key, value);
